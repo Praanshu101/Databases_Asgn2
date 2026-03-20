@@ -24,7 +24,7 @@ from .bruteforce import BruteForceDB
 from .table import Table
 
 
-@dataclass
+@dataclass # Using dataclass for convenient storage of benchmark results
 class BenchmarkResult:
     """Container for individual benchmark results.
     

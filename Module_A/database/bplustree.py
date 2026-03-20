@@ -24,11 +24,11 @@ class BPlusTreeNode:
         values: List of values associated with keys (only used in leaf nodes).
         next: Pointer to the next leaf node (forms linked list for range queries).
     """
-    is_leaf: bool = False
-    keys: list[int] = field(default_factory=list)
-    children: list[BPlusTreeNode] = field(default_factory=list)
-    values: list[object] = field(default_factory=list)
-    next: BPlusTreeNode | None = None
+    is_leaf: bool = False # True for leaf nodes, False for internal nodes
+    keys: list[int] = field(default_factory=list) # Sorted keys in the node (max length = order-1)
+    children: list[BPlusTreeNode] = field(default_factory=list) # Child pointers for internal nodes (length = len(keys) + 1)
+    values: list[object] = field(default_factory=list) # Values for leaf nodes (aligned with keys)
+    next: BPlusTreeNode | None = None # Pointer to next leaf node (for linked list of leaves)
 
 
 class BPlusTree:

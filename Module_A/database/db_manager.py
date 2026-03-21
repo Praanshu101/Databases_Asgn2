@@ -15,9 +15,10 @@ query operations.
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
+import sys
 import time
 import random
-import tracemalloc
+import types
 
 from .bplustree import BPlusTree
 from .bruteforce import BruteForceDB
@@ -376,32 +377,62 @@ class PerformanceAnalyzer:
     
     @staticmethod
     def _measure_memory_kb(obj: object) -> float:
-        """Measure peak memory usage of an object in kilobytes.
-        
-        Uses Python's tracemalloc module to track memory allocation during
-        object traversal. This gives an estimate of the memory footprint of
-        the data structure.
-        
-        Time Complexity: O(n) where n = number of nodes in tree
-        
+        """Estimate deep memory usage of an object in kilobytes.
+
+        The previous implementation used ``tracemalloc`` around ``repr(obj)``,
+        which mostly measured temporary allocation noise and could report very
+        similar values across different structures. This implementation walks the
+        object graph and sums ``sys.getsizeof`` recursively for a retained-size
+        estimate.
+
+        Time Complexity: O(n) where n = number of reachable Python objects
+
         Args:
-            obj: Object whose memory usage should be measured
-        
+            obj: Object whose memory usage should be measured.
+
         Returns:
-            Peak memory usage in kilobytes (float)
+            Estimated deep memory usage in kilobytes.
         """
-        # Start memory tracking to measure allocation across all threads
-        tracemalloc.start()
-        
-        # Force object traversal by converting to string representation
-        # This ensures Python evaluates the entire object structure
-        _ = repr(obj)
-        
-        # Get peak memory usage recorded during object traversal
-        _, peak = tracemalloc.get_traced_memory()
-        
-        # Stop memory tracking to clean up profiling overhead
-        tracemalloc.stop()
-        
-        # Convert bytes to kilobytes
-        return peak / 1024.0
+
+        seen: set[int] = set()
+        total_bytes = 0
+        stack: list[object] = [obj]
+
+        # Walk the object graph using a stack to avoid recursion depth issues.
+        while stack:
+            value = stack.pop()
+            obj_id = id(value)
+            if obj_id in seen:
+                continue
+            seen.add(obj_id)
+
+            total_bytes += sys.getsizeof(value)
+
+            # Avoid descending into interpreter/runtime metadata objects.
+            if isinstance(
+                value,
+                (
+                    type,
+                    types.ModuleType,
+                    types.FunctionType,
+                    types.BuiltinFunctionType,
+                    types.MethodType,
+                    types.CodeType,
+                ),
+            ):
+                continue
+            
+            # Recursively add contained objects for common container types and user-defined classes.
+            if isinstance(value, dict):
+                stack.extend(value.keys())
+                stack.extend(value.values())
+            elif isinstance(value, (list, tuple, set, frozenset)):
+                stack.extend(value)
+            elif hasattr(value, "__dict__"):
+                stack.append(vars(value))
+            elif hasattr(value, "__slots__"):
+                for slot in value.__slots__:
+                    if hasattr(value, slot):
+                        stack.append(getattr(value, slot))
+
+        return total_bytes / 1024.0 # Convert bytes to kilobytes

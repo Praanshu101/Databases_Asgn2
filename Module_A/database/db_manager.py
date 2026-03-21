@@ -13,7 +13,7 @@ query operations.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import time
 import random
@@ -66,75 +66,165 @@ class DatabaseManager:
     
     def __init__(self):
         """Initialize an empty database manager."""
-        self._tables: Dict[str, Table] = {}
+        self._default_db = "__default__"  # Backward-compatible default namespace
+        self.databases: Dict[str, Dict[str, Table]] = {self._default_db: {}}
+        self._tables = self.databases[self._default_db]  # Legacy alias used elsewhere
+
+    def create_database(self, db_name: str) -> None:
+        """Create a new logical database namespace.
+
+        Time Complexity: O(1)
+
+        Args:
+            db_name: Name of database namespace to create
+
+        Raises:
+            ValueError: If namespace already exists
+        """
+        if db_name in self.databases:
+            raise ValueError(f"Database '{db_name}' already exists")
+        # Initialize empty table registry for this database
+        self.databases[db_name] = {}
+
+    def delete_database(self, db_name: str) -> None:
+        """Delete an existing logical database namespace.
+
+        Time Complexity: O(1)
+
+        Args:
+            db_name: Name of database namespace to delete
+
+        Raises:
+            ValueError: If attempting to delete default database
+            KeyError: If database does not exist
+        """
+        if db_name == self._default_db:
+            raise ValueError("Default database cannot be deleted")
+        if db_name not in self.databases:
+            raise KeyError(f"Database '{db_name}' does not exist")
+        # Remove entire namespace and all its table references
+        del self.databases[db_name]
+
+    def list_databases(self) -> List[str]:
+        """Return names of all available databases.
+
+        Time Complexity: O(n) where n = number of databases
+        """
+        return list(self.databases.keys())
+
+    def _get_db_tables(self, db_name: str) -> Dict[str, Table]:
+        """Fetch table dictionary for a given database namespace."""
+        if db_name not in self.databases:
+            raise KeyError(f"Database '{db_name}' does not exist")
+        return self.databases[db_name]
     
-    def create_table(self, name: str, order: int = 4) -> Table:
+    def create_table(self, *args: Any, **kwargs: Any) -> Table:
         """Create a new table with B+ Tree backing.
         
-        Time Complexity: O(1)
-        
-        Args:
-            name: Unique table name
-            order: B+ Tree order (default 4)
-        
-        Returns:
-            The newly created Table instance
-        
-        Raises:
-            ValueError: If table with that name already exists
+        Supports two forms for compatibility:
+        1) create_table(name, order=4, schema=None, search_key=None)
+        2) create_table(db_name, table_name, schema, order=8, search_key=None)
         """
-        if name in self._tables:
-            raise ValueError(f"Table '{name}' already exists")
-        
-        # Create new Table with specified order
-        table = Table(name, order=order)
-        self._tables[name] = table
+        # MODE 1: Template-style call with explicit database and schema
+        if len(args) >= 3:
+            db_name = args[0]
+            table_name = args[1]
+            schema = args[2]
+            order = kwargs.get("order", 8)
+            search_key = kwargs.get("search_key")
+        # MODE 2: Existing assignment-style call on default database
+        elif len(args) >= 1:
+            db_name = kwargs.get("db_name", self._default_db)
+            table_name = args[0]
+
+            # Support create_table(name, schema_dict, order=...)
+            if len(args) >= 2 and isinstance(args[1], dict):
+                schema = args[1]
+                order = kwargs.get("order", 4)
+            # Support create_table(name, order_int)
+            elif len(args) >= 2 and isinstance(args[1], int):
+                schema = kwargs.get("schema")
+                order = args[1]
+            # Support create_table(name, order=..., schema=...)
+            else:
+                schema = kwargs.get("schema")
+                order = kwargs.get("order", 4)
+
+            search_key = kwargs.get("search_key")
+        else:
+            raise TypeError("create_table requires at least one positional argument")
+
+        tables = self._get_db_tables(db_name)
+        if table_name in tables:
+            raise ValueError(f"Table '{table_name}' already exists in database '{db_name}'")
+
+        # Construct schema-aware table and register it in selected namespace
+        table = Table(table_name, schema=schema, order=order, search_key=search_key)
+        tables[table_name] = table
+
+        # Keep old direct access in sync for default database users.
+        if db_name == self._default_db:
+            self._tables = tables
+
         return table
     
-    def get_table(self, name: str) -> Table:
+    def get_table(self, *args: str) -> Table:
         """Retrieve an existing table by name.
-        
-        Time Complexity: O(1)
-        
-        Args:
-            name: Table name to retrieve
-        
-        Returns:
-            The Table instance
-        
-        Raises:
-            KeyError: If table does not exist
+
+        Supports:
+        - get_table(name)
+        - get_table(db_name, table_name)
         """
-        if name not in self._tables:
-            raise KeyError(f"Table '{name}' does not exist")
-        return self._tables[name]
+        # Resolve overloaded signature into (db_name, table_name)
+        if len(args) == 1:
+            db_name = self._default_db
+            table_name = args[0]
+        elif len(args) == 2:
+            db_name, table_name = args
+        else:
+            raise TypeError("get_table expects (name) or (db_name, table_name)")
+
+        tables = self._get_db_tables(db_name)
+        if table_name not in tables:
+            raise KeyError(f"Table '{table_name}' does not exist in database '{db_name}'")
+        return tables[table_name]
     
-    def drop_table(self, name: str) -> None:
+    def drop_table(self, *args: str) -> None:
         """Delete a table from the database.
-        
-        Time Complexity: O(1)
-        
-        Args:
-            name: Table name to drop
-        
-        Raises:
-            KeyError: If table does not exist
+
+        Supports:
+        - drop_table(name)
+        - drop_table(db_name, table_name)
         """
-        if name not in self._tables:
-            raise KeyError(f"Table '{name}' does not exist")
-        
-        # Remove table from dictionary (Python garbage collector handles cleanup)
-        del self._tables[name]
+        # Resolve overloaded signature into (db_name, table_name)
+        if len(args) == 1:
+            db_name = self._default_db
+            table_name = args[0]
+        elif len(args) == 2:
+            db_name, table_name = args
+        else:
+            raise TypeError("drop_table expects (name) or (db_name, table_name)")
+
+        tables = self._get_db_tables(db_name)
+        if table_name not in tables:
+            raise KeyError(f"Table '{table_name}' does not exist in database '{db_name}'")
+
+        # Remove table registration (object is garbage-collected when unreferenced)
+        del tables[table_name]
+
+    def delete_table(self, db_name: str, table_name: str) -> None:
+        """Template-compatible alias for dropping a table by database and name."""
+        self.drop_table(db_name, table_name)
     
-    def list_tables(self) -> List[str]:
+    def list_tables(self, db_name: str | None = None) -> List[str]:
         """Get list of all table names.
-        
-        Time Complexity: O(n) where n = number of tables
-        
-        Returns:
-            List of table names currently in database
+
+        Args:
+            db_name: Optional database name. Uses default database when omitted.
         """
-        return list(self._tables.keys())
+        selected_db = db_name or self._default_db
+        tables = self._get_db_tables(selected_db)
+        return list(tables.keys())
 
 
 class PerformanceAnalyzer:

@@ -428,12 +428,17 @@ class BPlusTree:
         """
         # Initialize Graphviz directed graph object
         dot = Digraph(comment="B+ Tree")
+        
+        dot.attr(rankdir="TB", splines="polyline", nodesep="0.35", ranksep="0.65") 
+        dot.attr("node", fontname="Times-Roman", fontsize="10")
+        dot.attr("edge", arrowsize="0.7")
         id_gen = count()  # Generator for unique node IDs
         node_ids: dict[int, str] = {}  # Map Python object id to Graphviz node ID
 
         # Recursively add nodes and build the graph structure
         self._add_nodes(dot, self.root, node_ids, id_gen)
         self._add_edges(dot, self.root, node_ids)
+        self._add_leaf_linkage(dot, node_ids)
         
         return dot
 
@@ -459,11 +464,11 @@ class BPlusTree:
         if node.is_leaf:
             # Leaf nodes: show as boxes with their keys
             label = " | ".join(str(k) for k in node.keys) if node.keys else "<empty>"
-            dot.node(nid, f"Leaf: {label}", shape="box")
+            dot.node(nid, f"Leaf: {label}", shape="box", style="rounded,filled", fillcolor="lightyellow")
         else:
             # Internal nodes: show as ellipses with separator keys
             label = " | ".join(str(k) for k in node.keys) if node.keys else "<root>"
-            dot.node(nid, f"Internal: {label}")
+            dot.node(nid, f"Internal: {label}", shape="ellipse", style="filled", fillcolor="aliceblue")
             
             # Recursively add all children
             for child in node.children:
@@ -481,16 +486,50 @@ class BPlusTree:
             node_ids: Dictionary mapping Python object IDs to Graphviz node IDs.
         """
         if node.is_leaf:
-            # Leaf: add dashed edge to next leaf (linked list pointer)
-            if node.next is not None:
-                dot.edge(node_ids[id(node)], node_ids[id(node.next)], 
-                        style="dashed", color="blue")
             return
 
         # Internal node: add edges to all children and recurse
         for child in node.children:
             dot.edge(node_ids[id(node)], node_ids[id(child)])
             self._add_edges(dot, child, node_ids)
+
+    def _add_leaf_linkage(self, dot: Digraph, node_ids: dict[int, str]) -> None:
+        """Render linked-list edges between leaves and keep leaves on one rank."""
+        leaves = self._collect_leaves()
+        if not leaves:
+            return
+
+        # Keep leaves horizontally aligned to make linkage easy to inspect.
+        with dot.subgraph() as same_rank:
+            same_rank.attr(rank="same")
+            for leaf in leaves:
+                same_rank.node(node_ids[id(leaf)])
+
+        for i in range(len(leaves) - 1):
+            src = node_ids[id(leaves[i])]
+            dst = node_ids[id(leaves[i + 1])]
+            dot.edge(
+                src,
+                dst,
+                style="dashed",
+                color="blue",
+                penwidth="1.2",
+                constraint="false",
+                label="next" if i == 0 else "",
+            )
+
+    def _collect_leaves(self) -> list[BPlusTreeNode]:
+        """Collect all leaves from left to right using next pointers."""
+        node = self.root
+        while not node.is_leaf:
+            node = node.children[0]
+
+        leaves: list[BPlusTreeNode] = []
+        while node is not None:
+            leaves.append(node)
+            node = node.next
+
+        return leaves
 
     def _find_leaf(self, key: int) -> BPlusTreeNode:
         """Navigate from root to the leaf node that should contain the key.

@@ -239,8 +239,10 @@ class PerformanceAnalyzer:
         dataset_sizes: List[int],
         seed: int = 42,
         order: int = 4,
-        search_percent: float = 0.2,
-        delete_percent: float = 0.2
+        search_count: int = 200,
+        delete_count: int = 200,
+        range_query_count: int = 100,
+        key_space_multiplier: int = 20,
     ) -> List[BenchmarkResult]:
         """Execute comprehensive performance benchmark suite.
         
@@ -254,8 +256,10 @@ class PerformanceAnalyzer:
             dataset_sizes: List of dataset sizes to benchmark (e.g., [100, 500, 1000])
             seed: Random seed for reproducible data generation (default 42)
             order: B+ Tree order (default 4)
-            search_percent: Fraction of records to search (default 0.2)
-            delete_percent: Fraction of records to delete (default 0.2)
+            search_count: Number of random search keys per dataset size (default 200)
+            delete_count: Number of random delete keys per dataset size (default 200)
+            range_query_count: Number of random range queries per dataset size (default 100)
+            key_space_multiplier: Key universe size relative to n for random key generation
         
         Returns:
             List of BenchmarkResult objects, one per dataset size
@@ -263,26 +267,30 @@ class PerformanceAnalyzer:
         results: List[BenchmarkResult] = []
         
         # Iterate through each dataset size
-        for n in dataset_sizes:
-            # Set seed for reproducible random data
-            random.seed(seed)
-            
-            # DATA GENERATION PHASE 
-            # Generate n random (key, value) pairs with consistent values
-            keys = list(range(1, n + 1))
-            random.shuffle(keys)
+        for index, n in enumerate(dataset_sizes):
+            # Use a dedicated RNG per dataset size for reproducibility with independence.
+            rng = random.Random(seed + index)
+
+            # DATA GENERATION PHASE
+            # Generate n unique random keys from a larger key universe.
+            key_space_size = max(n * key_space_multiplier, n + 1)
+            key_space = list(range(100, 100 + key_space_size))
+            keys = rng.sample(key_space, n)
             values = [f"value_{k}" for k in keys]
-            
-            # Select random subsets for search and delete operations
-            num_search = max(1, int(n * search_percent))
-            num_delete = max(1, int(n * delete_percent))
-            
-            search_keys = random.sample(keys, num_search)
-            delete_keys = random.sample(keys, num_delete)
-            
-            # Range query parameters: find all keys between lo and hi
-            lo = keys[n // 4]  # 25th percentile
-            hi = keys[3 * n // 4]  # 75th percentile
+
+            # Select random key sets for search and delete operations.
+            num_search = max(1, min(search_count, len(key_space)))
+            num_delete = max(1, min(delete_count, len(keys)))
+            search_keys = rng.sample(key_space, num_search)
+            delete_keys = rng.sample(keys, num_delete)
+
+            # Generate random ranges to benchmark range-query behavior.
+            num_ranges = max(1, range_query_count)
+            range_bounds: list[tuple[int, int]] = []
+            for _ in range(num_ranges):
+                a, b = rng.sample(key_space, 2)
+                lo, hi = (a, b) if a <= b else (b, a)
+                range_bounds.append((lo, hi))
             
             # TABLE INITIALIZATION 
             # Create B+ Tree-backed table and BruteForce baseline
@@ -315,15 +323,17 @@ class PerformanceAnalyzer:
                 brute.search(k)
             search_bruteforce = time.perf_counter() - t0
             
-            # RANGE QUERY BENCHMARK 
-            # B+ Tree: Range query from lo to hi
+            # RANGE QUERY BENCHMARK
+            # B+ Tree: execute many random range queries
             t0 = time.perf_counter()
-            table.range_query(lo, hi)
+            for lo, hi in range_bounds:
+                table.range_query(lo, hi)
             range_bptree = time.perf_counter() - t0
-            
+
             # BruteForce: Same range query
             t0 = time.perf_counter()
-            brute.range_query(lo, hi)
+            for lo, hi in range_bounds:
+                brute.range_query(lo, hi)
             range_bruteforce = time.perf_counter() - t0
             
             # DELETION BENCHMARK 

@@ -4,6 +4,23 @@
 
 ## Structure
 
+
+```bash
+Module_A/
+│
+├── database/
+│   ├── __init__.py
+│   ├── bplustree.py 
+│   ├── bruteforce.py 
+│   ├── table.py 
+│   └── db_manager.py
+│
+├── report.ipynb 
+│
+└── Module_A_outputs/ 
+```
+
+
 - `Module_A/database/`: 
   - `bplustree.py`: B+ Tree implementation (core indexing engine)
   - `bruteforce.py`: Brute-force baseline for performance comparison

@@ -69,6 +69,7 @@ Module_B/
 │   ├── templates/
 │   ├── app.py
 │   ├── benchmark.py
+│   ├── api_benchmark.py
 │   ├── generate_data.py
 │   ├── generate_graph.py
 │   └── bottleneck_graph.png
@@ -113,9 +114,10 @@ http://localhost:5000
 ---
 
 ### 3. Run Benchmark (Before Indexing)
-To measure query execution time:
+To measure query execution time and api response time:
 ```bash
 python benchmark.py
+python api_benchmark.py
 ```
 This prints average execution time of the main booking query.
 
@@ -134,6 +136,7 @@ This creates indexes to improve query performance.
 Run again:
 ```bash
 python benchmark.py
+python api_benchmark.py
 ```
 ---
 

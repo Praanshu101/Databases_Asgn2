@@ -4,15 +4,34 @@
 
 ## Structure
 
-- `Module_A/database/`: B+ Tree engine, brute-force baseline, table abstraction, DB manager.
-- `Module_A/report.ipynb`: benchmarking + visualisation report template.
+- `Module_A/database/`: 
+  - `bplustree.py`: B+ Tree implementation (core indexing engine)
+  - `bruteforce.py`: Brute-force baseline for performance comparison
+  - `table.py`: Table abstraction with insert/delete/range_query operations
+  - `db_manager.py`: Database manager handling multiple tables and memory profiling
+- `Module_A/report.ipynb`: Jupyter notebook for benchmarking, visualization, demo, and performance comparison analysis
+- `Module_A/Module_A_outputs/`: Directory for generated performance graphs and results
 
-## Run Module A quick test
+
+## Quick Test
 
 ```powershell
 cd Module_A
 python -c "from database.table import Table; t=Table('t'); [t.insert(i, {'v': i}) for i in [5,2,9,1,7]]; print(t.range_query(2,8))"
 ```
+
+## Run Benchmarking Report and Tree Visualization
+
+To generate the full benchmarking and visualization report:
+
+```powershell
+cd Module_A
+jupyter notebook report.ipynb
+```
+
+Outputs will be saved in `Module_A/Module_A_outputs/` directory, including performance graphs and B+ Tree visualizations.
+
+Note: Demo of B+ Tree operations (insertions, deletions, range queries) is included in the Jupyter notebook.
 
 # Module B – Shuttle System Web App & SQL Optimization
 
